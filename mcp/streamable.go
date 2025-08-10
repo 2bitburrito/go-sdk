@@ -176,14 +176,13 @@ func NewStreamableServerTransport(sessionID string, opts *StreamableServerTransp
 		opts = &StreamableServerTransportOptions{}
 	}
 	t := &StreamableServerTransport{
-		sessionID:       sessionID,
-		incoming:        make(chan jsonrpc.Message, 10),
-		done:            make(chan struct{}),
-		streams:         make(map[StreamID]*stream),
-		requestStreams:  make(map[jsonrpc.ID]StreamID),
-		defaultStreamID: StreamID(randText()),
+		sessionID:      sessionID,
+		incoming:       make(chan jsonrpc.Message, 10),
+		done:           make(chan struct{}),
+		streams:        make(map[StreamID]*stream),
+		requestStreams: make(map[jsonrpc.ID]StreamID),
 	}
-	t.streams[t.defaultStreamID] = newStream(t.defaultStreamID)
+	t.streams[StreamID("")] = newStream(StreamID(""))
 	if opts != nil {
 		t.opts = *opts
 	}
@@ -200,11 +199,10 @@ func (t *StreamableServerTransport) SessionID() string {
 // A StreamableServerTransport implements the [Transport] interface for a
 // single session.
 type StreamableServerTransport struct {
-	sessionID       string
-	defaultStreamID StreamID
-	opts            StreamableServerTransportOptions
-	incoming        chan jsonrpc.Message // messages from the client to the server
-	done            chan struct{}
+	sessionID string
+	opts      StreamableServerTransportOptions
+	incoming  chan jsonrpc.Message // messages from the client to the server
+	done      chan struct{}
 
 	mu sync.Mutex
 	// Sessions are closed exactly once.
@@ -283,8 +281,7 @@ func signalChanPtr() *chan struct{} {
 	return &c
 }
 
-// A StreamID identifies a stream of SSE events. It is a random string
-// 26 characters in length
+// A StreamID identifies a stream of SSE events. It is globally unique.
 // [ServerSession].
 type StreamID string
 
@@ -339,8 +336,8 @@ func (t *StreamableServerTransport) ServeHTTP(w http.ResponseWriter, req *http.R
 }
 
 func (t *StreamableServerTransport) serveGET(w http.ResponseWriter, req *http.Request) (int, string) {
-	// connID = t.defaultStreamID corresponds to the default GET request.
-	id := t.defaultStreamID
+	// connID = "" corresponds to the default GET request.
+	id := StreamID("")
 	// By default, we haven't seen a last index. Since indices start at 0, we represent
 	// that by -1. This is incremented just before each event is written, in streamResponse
 	// around L407.
@@ -547,9 +544,6 @@ func parseEventID(eventID string) (sid StreamID, idx int, ok bool) {
 		return "", 0, false
 	}
 	stream := StreamID(parts[0])
-	if len(stream) == 0 {
-		return "", 0, false
-	}
 	idx, err := strconv.Atoi(parts[1])
 	if err != nil || idx < 0 {
 		return "", 0, false
@@ -614,7 +608,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg jsonrpc.Messa
 
 	stream := t.streams[forConn]
 	if forConn == "" {
-		stream = t.streams[t.defaultStreamID]
+		stream = t.streams[""]
 	}
 	if stream == nil {
 		return fmt.Errorf("no stream with ID %s", forConn)
@@ -624,7 +618,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg jsonrpc.Messa
 		// done. This is a sequencing violation from the server, so we should report
 		// a side-channel error here. Put the message on the general queue to avoid
 		// dropping messages.
-		stream = t.streams[t.defaultStreamID]
+		stream = t.streams[""]
 	}
 
 	// TODO: if there is nothing to send these messages to (as would happen, for example, if forConn == ""
