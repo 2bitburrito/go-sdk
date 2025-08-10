@@ -608,7 +608,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg jsonrpc.Messa
 
 	stream := t.streams[forConn]
 	if forConn == "" {
-		stream = t.streams[""]
+		stream = t.streams[StreamID("")]
 	}
 	if stream == nil {
 		return fmt.Errorf("no stream with ID %s", forConn)
@@ -618,7 +618,7 @@ func (t *StreamableServerTransport) Write(ctx context.Context, msg jsonrpc.Messa
 		// done. This is a sequencing violation from the server, so we should report
 		// a side-channel error here. Put the message on the general queue to avoid
 		// dropping messages.
-		stream = t.streams[""]
+		stream = t.streams[StreamID("")]
 	}
 
 	// TODO: if there is nothing to send these messages to (as would happen, for example, if forConn == ""
